@@ -1566,16 +1566,20 @@
   - EmptyContent : RenderFragment
   - OnLayoutChanged : EventCallback
   - OnPanelClosed : EventCallback<String>
+  - OnPanelStateChanged : EventCallback<DockPanelStateChangedEventArgs>
 
 ### BbDockNode (BlazorBlueprint.Components)
   - Node : Object [EditorRequired]
 
 ### BbDockPanel (BlazorBlueprint.Components)
+  - AutoHideSize : Int32?
+  - CanAutoHide : Boolean
   - CanFloat : Boolean
   - ChildContent : RenderFragment
   - Closable : Boolean
   - Icon : RenderFragment
   - Id : String [EditorRequired]
+  - InitialState : DockPanelState
   - Locked : Boolean
   - MaxHeight : Int32?
   - MaxWidth : Int32?
@@ -5384,6 +5388,11 @@
   - Large = 2
   - ExtraLarge = 3
   - Full = 4
+
+### DockPanelState (BlazorBlueprint.Components)
+  - Docked = 0
+  - AutoHidden = 1
+  - Closed = 2
 
 ### DockZone (BlazorBlueprint.Components)
   - Center = 0

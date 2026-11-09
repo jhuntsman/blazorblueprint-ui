@@ -26,6 +26,7 @@
             <li>• <strong class="text-foreground">Maximize</strong> a group with the button in the tab bar.</li>
             <li>• <strong class="text-foreground">Close</strong> a tab with its ✕, then reopen it (see below).</li>
             <li>• <strong class="text-foreground">Right-click a tab</strong> to close others, close all, or pin it to the front.</li>
+            <li>• <strong class="text-foreground">Auto-hide</strong> a group with its header button; open it again from the edge strip.</li>
         </ul>
     </div>
 
@@ -190,6 +191,75 @@
         </div>
 
         <CodeBlock Source="Components/Dock/reopen.txt" />
+    </div>
+
+
+    <!-- Auto hide -->
+    <div class="space-y-4">
+        <div class="space-y-2">
+            <h2 class="text-2xl font-semibold">Auto Hide</h2>
+            <p class="text-sm text-muted-foreground">
+                Auto-hide a group with the button in its header, or a single panel from its tab's context menu.
+                The panels collapse to a strip on the nearest edge; click a strip tab to slide the panel out over
+                the layout, and click outside or press <BbKbd>Esc</BbKbd> to hide it again. The flyout's dock button
+                puts the panels back where they were. Set <code>InitialState</code> to start a panel
+                <code>AutoHidden</code> or <code>Closed</code>, and use <code>SetPanelStateAsync</code> with
+                <code>OnPanelStateChanged</code> to drive a View menu.
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            @foreach (var (id, title) in autoHidePanels)
+            {
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="w-20 font-medium">@title</span>
+                    <BbButtonGroup>
+                        @foreach (var state in Enum.GetValues<DockPanelState>())
+                        {
+                            <BbButton Size="ButtonSize.Small"
+                                      Variant="@(autoHideStates[id] == state ? ButtonVariant.Default : ButtonVariant.Outline)"
+                                      OnClick="() => SetAutoHideState(id, state)">
+                                @state
+                            </BbButton>
+                        }
+                    </BbButtonGroup>
+                </div>
+            }
+        </div>
+
+        <div class="h-[420px] border">
+            <BbDock @ref="autoHideDock" OnPanelStateChanged="OnAutoHideStateChanged">
+                <BbDockPanel Id="ah-editor" Title="Editor" Region="DockZone.Center" Closable="false" CanAutoHide="false">
+                    <Icon><LucideIcon Name="file-code" Size="14" /></Icon>
+                    <ChildContent>
+                        <div class="p-4 text-sm text-muted-foreground">
+                            The editor can't be auto-hidden. Open <strong>Output</strong> from the bottom strip,
+                            or auto-hide <strong>Explorer</strong> with the button in its header.
+                        </div>
+                    </ChildContent>
+                </BbDockPanel>
+                <BbDockPanel Id="ah-explorer" Title="Explorer" Region="DockZone.Left">
+                    <Icon><LucideIcon Name="folder-tree" Size="14" /></Icon>
+                    <ChildContent><div class="p-4 text-sm text-muted-foreground">File tree</div></ChildContent>
+                </BbDockPanel>
+                <BbDockPanel Id="ah-output" Title="Output" Region="DockZone.Bottom"
+                             InitialState="DockPanelState.AutoHidden" AutoHideSize="160">
+                    <Icon><LucideIcon Name="terminal" Size="14" /></Icon>
+                    <ChildContent><div class="p-4 font-mono text-xs text-muted-foreground">Build succeeded. 0 warnings, 0 errors.</div></ChildContent>
+                </BbDockPanel>
+                <BbDockPanel Id="ah-problems" Title="Problems" Region="DockZone.Bottom" Order="1"
+                             InitialState="DockPanelState.AutoHidden" AutoHideSize="160">
+                    <Icon><LucideIcon Name="circle-alert" Size="14" /></Icon>
+                    <ChildContent><div class="p-4 text-sm text-muted-foreground">No problems found.</div></ChildContent>
+                </BbDockPanel>
+                <BbDockPanel Id="ah-search" Title="Search" Region="DockZone.Right" InitialState="DockPanelState.Closed">
+                    <Icon><LucideIcon Name="search" Size="14" /></Icon>
+                    <ChildContent><div class="p-4 text-sm text-muted-foreground">Search across files.</div></ChildContent>
+                </BbDockPanel>
+            </BbDock>
+        </div>
+
+        <CodeBlock Source="Components/Dock/autohide.txt" />
     </div>
 
 
@@ -384,6 +454,7 @@ $ _</code></pre>
             <AccessibilityItem>Panel content renders in a <code>role="tabpanel"</code> linked to its tab via <code>aria-controls</code> and <code>aria-labelledby</code>.</AccessibilityItem>
             <AccessibilityItem>Close and maximize controls expose descriptive <code>aria-label</code>s.</AccessibilityItem>
             <AccessibilityItem>Resize handles between docked panels reuse the Resizable separator semantics.</AccessibilityItem>
+            <AccessibilityItem>Each auto-hide strip is a labelled <code>role="toolbar"</code>; its tabs are buttons with <code>aria-expanded</code> and <code>aria-controls</code> pointing at the flyout, a <code>role="region"</code> named after the open panel.</AccessibilityItem>
         </AriaAttributes>
         <KeyboardNavigation>
             <KeyboardShortcutItem Description="Move focus between tabs in a strip">
@@ -394,6 +465,9 @@ $ _</code></pre>
             </KeyboardShortcutItem>
             <KeyboardShortcutItem Description="Activate the focused tab">
                 <BbKbd>Enter</BbKbd> / <BbKbd>Space</BbKbd>
+            </KeyboardShortcutItem>
+            <KeyboardShortcutItem Description="Hide an auto-hide flyout and return focus to its strip tab">
+                <BbKbd>Escape</BbKbd>
             </KeyboardShortcutItem>
             <KeyboardShortcutItem Description="Resize a split between panels">
                 <BbKbd>Arrow Keys</BbKbd>
@@ -423,10 +497,22 @@ $ _</code></pre>
                     Invoked with the panel id when a panel is closed by the user.
                 </ApiParameter>
                 <ApiParameter Name="OpenPanelAsync(string)" Type="Task" Default="—">
-                    Method that reopens a closed panel into a default location.
+                    Method that reopens a closed panel into a default location, or shows an auto-hidden panel's flyout.
                 </ApiParameter>
                 <ApiParameter Name="GetClosedPanelIds()" Type="IReadOnlyList&lt;string&gt;" Default="—">
                     Method returning the ids of panels currently closed.
+                </ApiParameter>
+                <ApiParameter Name="OnPanelStateChanged" Type="EventCallback&lt;DockPanelStateChangedEventArgs&gt;" Default="—">
+                    Invoked with the panel id and its old and new <code>DockPanelState</code> whenever a panel is docked,
+                    auto-hidden or closed, by the user or from code. Not raised for <code>InitialState</code>.
+                </ApiParameter>
+                <ApiParameter Name="GetPanelState(string)" Type="DockPanelState" Default="—">
+                    Method returning whether a panel is <code>Docked</code>, <code>AutoHidden</code> or <code>Closed</code>.
+                    Throws for an id that isn't registered.
+                </ApiParameter>
+                <ApiParameter Name="SetPanelStateAsync(string, DockPanelState)" Type="Task" Default="—">
+                    Method that docks, auto-hides or closes a panel. Docking returns an auto-hidden panel to the group it came
+                    from. Not restricted by <code>Closable</code>, <code>CanAutoHide</code> or <code>Locked</code>.
                 </ApiParameter>
                 <ApiParameter Name="Class" Type="string?" Default="null">
                     Additional CSS classes for the dock surface.
@@ -462,6 +548,17 @@ $ _</code></pre>
                     When true, the panel can't be dragged to move/reorder/re-dock, detached into a floating window,
                     or closed. Overrides <code>Closable</code> and <code>CanFloat</code>.
                 </ApiParameter>
+                <ApiParameter Name="InitialState" Type="DockPanelState" Default="Docked">
+                    How the panel starts: <code>Docked</code>, <code>AutoHidden</code> (in the strip on its <code>Region</code>
+                    edge; <code>Center</code> uses the left edge) or <code>Closed</code>. Read once, like <code>Region</code>.
+                </ApiParameter>
+                <ApiParameter Name="CanAutoHide" Type="bool" Default="true">
+                    Whether the user can auto-hide the panel to an edge strip. Ignored when <code>Locked</code> is true.
+                </ApiParameter>
+                <ApiParameter Name="AutoHideSize" Type="int?" Default="null">
+                    Flyout width (left/right edges) or height (top/bottom edges) in pixels while auto-hidden.
+                    Defaults to 280px for the sides and 200px for the top and bottom.
+                </ApiParameter>
                 <ApiParameter Name="MinWidth" Type="int?" Default="null">
                     Minimum panel width in pixels. Enforced while resizing a floating window; applied as a CSS constraint when docked.
                 </ApiParameter>
@@ -496,6 +593,10 @@ $ _</code></pre>
             new("MaximizePanelGroup", "Maximize panel group", "Aria-label/tooltip on the maximize button"),
             new("RestorePanelGroup", "Restore panel group", "Aria-label/tooltip on the restore button"),
             new("NoPanelsOpen", "No panels are open.", "Default empty state shown when no panels remain"),
+            new("AutoHide", "Auto Hide", "Context-menu item that auto-hides the tab's panel"),
+            new("AutoHidePanelGroup", "Auto-hide panel group", "Aria-label/tooltip on a group's auto-hide button"),
+            new("DockPanel", "Dock {0}", "Aria-label/tooltip on a flyout's dock button ({0} = panel title)"),
+            new("AutoHiddenPanels", "Auto-hidden panels", "Aria-label on each edge's auto-hide strip"),
         })"
         CodeExample="@(@"builder.Services.AddBlazorBlueprintComponents(localizer =>
 {
@@ -552,6 +653,38 @@ builder.Services.AddBlazorBlueprintComponents();
 var app = builder.Build();
 app.MapRazorComponents<App>();
 app.Run();";
+
+    private BbDock? autoHideDock;
+    private readonly (string Id, string Title)[] autoHidePanels =
+    {
+        ("ah-explorer", "Explorer"),
+        ("ah-output", "Output"),
+        ("ah-problems", "Problems"),
+        ("ah-search", "Search"),
+    };
+    private readonly Dictionary<string, DockPanelState> autoHideStates = new()
+    {
+        ["ah-explorer"] = DockPanelState.Docked,
+        ["ah-output"] = DockPanelState.AutoHidden,
+        ["ah-problems"] = DockPanelState.AutoHidden,
+        ["ah-search"] = DockPanelState.Closed,
+    };
+
+    private void OnAutoHideStateChanged(DockPanelStateChangedEventArgs e)
+    {
+        if (autoHideStates.ContainsKey(e.PanelId))
+        {
+            autoHideStates[e.PanelId] = e.NewState;
+        }
+    }
+
+    private async Task SetAutoHideState(string id, DockPanelState state)
+    {
+        if (autoHideDock is not null)
+        {
+            await autoHideDock.SetPanelStateAsync(id, state);
+        }
+    }
 
     private void OnPanelClosed(string id)
     {

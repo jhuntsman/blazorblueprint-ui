@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ---
 
 
+## Unreleased
+
+### Added
+
+- **`BbDock` auto-hide**: collapse a panel group to a tab strip along the nearest dock edge and
+  slide it out over the layout on demand, as Visual Studio does. Auto-hide a group from its header
+  button or a single panel from the tab context menu; the flyout's Dock button returns the panels
+  to the group and tab positions they came from. The flyout closes on an outside click or Escape
+  and can be resized from its inner edge.
+- **`DockPanelState`** (`Docked`, `AutoHidden`, `Closed`) with `BbDockPanel.InitialState`, so a
+  layout can start with panels auto-hidden or closed; `BbDockPanel.CanAutoHide` and
+  `BbDockPanel.AutoHideSize`; and `BbDock.GetPanelState`, `BbDock.SetPanelStateAsync` and
+  `BbDock.OnPanelStateChanged` for a View menu that shows and changes panel state.
+
 ## 2026-11-07 (v4.2.0)
 
 ### Upgrade notes

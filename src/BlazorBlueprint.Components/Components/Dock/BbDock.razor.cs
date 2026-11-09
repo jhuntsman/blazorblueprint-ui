@@ -76,7 +76,7 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         maximizedGroupId is null ? null : FindGroup(maximizedGroupId);
 
     private string CssClass => ClassNames.cn(
-        "bb:relative bb:h-full bb:w-full bb:select-none bb:overflow-hidden bb:bg-muted/20 bb:text-foreground",
+        "bb:relative bb:flex bb:h-full bb:w-full bb:flex-col bb:select-none bb:overflow-hidden bb:bg-muted/20 bb:text-foreground",
         Class);
 
     // ----------------------------------------------------------------- Registration
@@ -93,13 +93,24 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         if (!registrationOrder.Contains(panel.Id))
         {
             registrationOrder.Add(panel.Id);
+            ApplyInitialState(panel);
+        }
+
+        if (!layoutBuilt)
+        {
+            return;
         }
 
         // A panel added after the initial layout was built (e.g. conditionally rendered)
-        // is docked into a sensible default location.
-        if (layoutBuilt && !closedPanels.Contains(panel.Id) && FindGroupContaining(panel.Id) is null)
+        // is docked into a sensible default location, or shown in its auto-hide strip.
+        var state = StateOf(panel.Id);
+        if (state == DockPanelState.Docked && FindGroupContaining(panel.Id) is null)
         {
             AddPanelToDefaultLocation(panel.Id);
+            InvokeAsync(StateHasChanged);
+        }
+        else if (state == DockPanelState.AutoHidden)
+        {
             InvokeAsync(StateHasChanged);
         }
     }
@@ -119,6 +130,11 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
             RemovePanelFromLayout(panel.Id);
             InvokeAsync(StateHasChanged);
         }
+        else if (IsAutoHidden(panel.Id))
+        {
+            RemoveAutoHide(panel.Id);
+            InvokeAsync(StateHasChanged);
+        }
     }
 
     internal BbDockPanel? GetPanel(string id) => panels.TryGetValue(id, out var p) ? p : null;
@@ -133,7 +149,10 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
             layoutBuilt = true;
             await InitializeJsAsync();
             StateHasChanged();
+            return;
         }
+
+        await SyncFlyoutJsAsync();
     }
 
     private async Task InitializeJsAsync()
@@ -163,7 +182,7 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         {
             var ids = registrationOrder
                 .Where(id => panels.TryGetValue(id, out var p)
-                             && !closedPanels.Contains(id)
+                             && StateOf(id) == DockPanelState.Docked
                              && p.Region == region)
                 .OrderBy(id => panels[id].Order)
                 .ToList();
@@ -183,6 +202,21 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         var top = MakeGroup(DockZone.Top);
         var center = MakeGroup(DockZone.Center);
         var bottom = MakeGroup(DockZone.Bottom);
+
+        var regionGroups = new Dictionary<DockZone, DockTabGroupNode>();
+        foreach (var (region, regionGroup) in new[]
+                 {
+                     (DockZone.Left, left), (DockZone.Right, right), (DockZone.Top, top),
+                     (DockZone.Center, center), (DockZone.Bottom, bottom)
+                 })
+        {
+            if (regionGroup is not null)
+            {
+                regionGroups[region] = regionGroup;
+            }
+        }
+
+        BindInitialAutoHide(regionGroups);
 
         var middleParts = new List<(DockNode Node, double Weight)>();
         if (top is not null)
@@ -689,9 +723,11 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
             return;
         }
 
-        RemovePanelFromLayout(panelId);
-        pinnedPanels.Remove(panelId);
-        closedPanels.Add(panelId);
+        var oldState = StateOf(panelId);
+        if (!ClosePanelCore(panelId))
+        {
+            return;
+        }
 
         if (OnPanelClosed.HasDelegate)
         {
@@ -699,6 +735,7 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         }
 
         await AfterMutateAsync();
+        await RaiseStateChangedAsync(panelId, oldState, DockPanelState.Closed);
     }
 
     /// <summary>
@@ -736,7 +773,7 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
 
     private async Task CloseManyAsync(IReadOnlyList<string> panelIds)
     {
-        var closedAny = false;
+        var closed = new List<(string Id, DockPanelState OldState)>();
 
         foreach (var id in panelIds)
         {
@@ -745,10 +782,13 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
                 continue;
             }
 
-            RemovePanelFromLayout(id);
-            pinnedPanels.Remove(id);
-            closedPanels.Add(id);
-            closedAny = true;
+            var oldState = StateOf(id);
+            if (!ClosePanelCore(id))
+            {
+                continue;
+            }
+
+            closed.Add((id, oldState));
 
             if (OnPanelClosed.HasDelegate)
             {
@@ -756,20 +796,33 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
             }
         }
 
-        if (closedAny)
+        if (closed.Count > 0)
         {
             await AfterMutateAsync();
+
+            foreach (var (id, oldState) in closed)
+            {
+                await RaiseStateChangedAsync(id, oldState, DockPanelState.Closed);
+            }
         }
     }
 
     /// <summary>
     /// Reopens a previously closed panel, docking it into a sensible default location.
+    /// If the panel is auto-hidden, its flyout is shown instead and it stays auto-hidden.
     /// </summary>
     /// <param name="panelId">The identifier of the panel to reopen.</param>
     public async Task OpenPanelAsync(string panelId)
     {
         if (!panels.ContainsKey(panelId))
         {
+            return;
+        }
+
+        var oldState = StateOf(panelId);
+        if (oldState == DockPanelState.AutoHidden)
+        {
+            ShowFlyout(panelId);
             return;
         }
 
@@ -782,6 +835,7 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
 
         maximizedGroupId = null;
         await AfterMutateAsync();
+        await RaiseStateChangedAsync(panelId, oldState, DockPanelState.Docked);
     }
 
     /// <summary>
@@ -881,6 +935,11 @@ public partial class BbDock : ComponentBase, IAsyncDisposable
         foreach (var group in AllGroups())
         {
             group.EnsureActive();
+        }
+
+        if (activeFlyoutPanelId is not null && !IsAutoHidden(activeFlyoutPanelId))
+        {
+            activeFlyoutPanelId = null;
         }
 
         StateHasChanged();

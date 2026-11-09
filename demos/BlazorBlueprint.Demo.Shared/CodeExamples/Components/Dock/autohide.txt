@@ -1,0 +1,73 @@
+@* A "View" row: one button per state for each panel, kept in sync by OnPanelStateChanged. *@
+@foreach (var (id, title) in viewPanels)
+{
+    <div class="flex items-center gap-2">
+        <span class="w-20">@title</span>
+        <BbButtonGroup>
+            @foreach (var state in Enum.GetValues<DockPanelState>())
+            {
+                <BbButton Size="ButtonSize.Small"
+                          Variant="@(states[id] == state ? ButtonVariant.Default : ButtonVariant.Outline)"
+                          OnClick="() => dock!.SetPanelStateAsync(id, state)">
+                    @state
+                </BbButton>
+            }
+        </BbButtonGroup>
+    </div>
+}
+
+<div class="h-[420px] rounded-lg border">
+    <BbDock @ref="dock" OnPanelStateChanged="OnPanelStateChanged">
+        <BbDockPanel Id="editor" Title="Editor" Region="DockZone.Center" CanAutoHide="false">
+            <div class="p-4">Editor</div>
+        </BbDockPanel>
+        <BbDockPanel Id="explorer" Title="Explorer" Region="DockZone.Left">
+            <div class="p-4">File tree</div>
+        </BbDockPanel>
+
+        @* Start collapsed to the bottom strip; the flyout opens 160px tall. *@
+        <BbDockPanel Id="output" Title="Output" Region="DockZone.Bottom"
+                     InitialState="DockPanelState.AutoHidden" AutoHideSize="160">
+            <div class="p-4">Build output</div>
+        </BbDockPanel>
+        <BbDockPanel Id="problems" Title="Problems" Region="DockZone.Bottom" Order="1"
+                     InitialState="DockPanelState.AutoHidden" AutoHideSize="160">
+            <div class="p-4">No problems found.</div>
+        </BbDockPanel>
+
+        @* Start closed; opened later from the View row or OpenPanelAsync. *@
+        <BbDockPanel Id="search" Title="Search" Region="DockZone.Right"
+                     InitialState="DockPanelState.Closed">
+            <div class="p-4">Search</div>
+        </BbDockPanel>
+    </BbDock>
+</div>
+
+@code {
+    private BbDock? dock;
+
+    private readonly (string Id, string Title)[] viewPanels =
+    {
+        ("explorer", "Explorer"),
+        ("output", "Output"),
+        ("problems", "Problems"),
+        ("search", "Search"),
+    };
+
+    // Mirrors each panel's InitialState; OnPanelStateChanged keeps it current after that.
+    private readonly Dictionary<string, DockPanelState> states = new()
+    {
+        ["explorer"] = DockPanelState.Docked,
+        ["output"] = DockPanelState.AutoHidden,
+        ["problems"] = DockPanelState.AutoHidden,
+        ["search"] = DockPanelState.Closed,
+    };
+
+    private void OnPanelStateChanged(DockPanelStateChangedEventArgs e)
+    {
+        if (states.ContainsKey(e.PanelId))
+        {
+            states[e.PanelId] = e.NewState;
+        }
+    }
+}

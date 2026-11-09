@@ -110,6 +110,19 @@
                     </BbDropdownMenu>
                 }
 
+                @if (!IsFloating && Dock.CanAutoHideGroup(GroupNode))
+                {
+                    <button type="button"
+                            class="bb:inline-flex bb:h-6 bb:w-6 bb:items-center bb:justify-center bb:rounded-sm bb:text-muted-foreground bb:transition-colors bb:hover:bg-foreground/10 bb:hover:text-foreground"
+                            aria-label="@Localizer["Dock.AutoHidePanelGroup"]"
+                            title="@Localizer["Dock.AutoHidePanelGroup"]"
+                            data-dock-autohide-group="@GroupNode.Id"
+                            @onclick="() => Dock.AutoHideGroupAsync(GroupNode)"
+                            @onpointerdown:stopPropagation="true">
+                        <LucideIcon Name="@BbDock.AutoHideIcon(Dock.ResolveEdge(GroupNode))" Size="14" />
+                    </button>
+                }
+
                 @if (!IsFloating)
                 {
                     <button type="button"
@@ -169,6 +182,10 @@
                     <ChildContent>@Localizer["Dock.CloseAllTabs"]</ChildContent>
                 </BbContextMenuItem>
                 <BbContextMenuSeparator />
+                <BbContextMenuItem Disabled="@(IsFloating || !panel.CanUserAutoHide)" OnClick="() => Dock.AutoHidePanelAsync(panel.Id)">
+                    <Icon><LucideIcon Name="@BbDock.AutoHideIcon(Dock.ResolveEdge(GroupNode))" Size="16" /></Icon>
+                    <ChildContent>@Localizer["Dock.AutoHide"]</ChildContent>
+                </BbContextMenuItem>
                 <BbContextMenuItem OnClick="() => Dock.TogglePinAsync(panel.Id)">
                     <Icon><LucideIcon Name="@(pinned ? "pin-off" : "pin")" Size="16" /></Icon>
                     <ChildContent>@(pinned ? Localizer["Dock.UnpinTab"] : Localizer["Dock.PinTab"])</ChildContent>

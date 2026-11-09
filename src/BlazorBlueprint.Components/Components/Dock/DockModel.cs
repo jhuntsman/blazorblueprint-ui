@@ -136,3 +136,43 @@ internal sealed class DockFloatingWindow
     /// <summary>Window height in pixels.</summary>
     public double Height { get; set; } = DefaultHeight;
 }
+
+/// <summary>
+/// A panel collapsed into an auto-hide strip along an edge of the dock, plus what is needed to
+/// put it back where it came from.
+/// </summary>
+internal sealed class DockAutoHideEntry
+{
+    /// <summary>The default flyout width (pixels) for a panel auto-hidden to the left or right edge.</summary>
+    public const double DefaultSideSize = 280;
+
+    /// <summary>The default flyout height (pixels) for a panel auto-hidden to the top or bottom edge.</summary>
+    public const double DefaultEndSize = 200;
+
+    /// <summary>The smallest size (pixels) a flyout may be resized to, regardless of panel constraints.</summary>
+    public const double MinSize = 120;
+
+    /// <summary>The panel that is auto-hidden.</summary>
+    public string PanelId { get; init; } = string.Empty;
+
+    /// <summary>The edge whose strip holds the panel's tab. Never <see cref="DockZone.Center"/>.</summary>
+    public DockZone Edge { get; set; } = DockZone.Left;
+
+    /// <summary>
+    /// The flyout size (pixels) after the user resized it, or <c>null</c> to use the panel's
+    /// <see cref="BbDockPanel.AutoHideSize"/> or the default.
+    /// </summary>
+    public double? Size { get; set; }
+
+    /// <summary>
+    /// The tab group the panel is returned to when docked again. Panels auto-hidden together share
+    /// this id, so they come back as one group even after their original group was removed.
+    /// </summary>
+    public string? RestoreGroupId { get; set; }
+
+    /// <summary>The panel's tab index within <see cref="RestoreGroupId"/> when it was auto-hidden.</summary>
+    public int RestoreIndex { get; set; }
+
+    /// <summary>Whether the edge is a vertical (left or right) edge, so the flyout size is a width.</summary>
+    public bool IsSideEdge => Edge is DockZone.Left or DockZone.Right;
+}

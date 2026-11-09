@@ -312,6 +312,10 @@ public class DefaultBbLocalizer : IBbLocalizer
         ["Dock.MaximizePanelGroup"] = "Maximize panel group",
         ["Dock.RestorePanelGroup"] = "Restore panel group",
         ["Dock.NoPanelsOpen"] = "No panels are open.",
+        ["Dock.AutoHide"] = "Auto Hide",
+        ["Dock.AutoHidePanelGroup"] = "Auto-hide panel group",
+        ["Dock.DockPanel"] = "Dock {0}",
+        ["Dock.AutoHiddenPanels"] = "Auto-hidden panels",
 
         // Drawer
         ["Drawer.Resize"] = "Resize drawer",

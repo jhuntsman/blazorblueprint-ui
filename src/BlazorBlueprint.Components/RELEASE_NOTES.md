@@ -1,3 +1,9 @@
+## What's New in v4.3.0 (unreleased)
+
+### New Features
+
+- **BbDock auto-hide**: a panel group can collapse to a tab strip on its nearest edge and slide out over the layout when its tab is clicked, closing again on an outside click or Escape. `BbDockPanel.InitialState` (`Docked`, `AutoHidden`, `Closed`) sets how a panel starts, `CanAutoHide` and `AutoHideSize` control the flyout, and `BbDock.GetPanelState`, `SetPanelStateAsync` and `OnPanelStateChanged` read and change panel state from code.
+
 ## What's New in v4.2.0
 
 ### Breaking Changes

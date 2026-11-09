@@ -67,6 +67,32 @@ public partial class BbDockPanel : ComponentBase, IDisposable
     public bool Locked { get; set; }
 
     /// <summary>
+    /// The state the panel starts in when it registers with the dock. <see cref="DockPanelState.AutoHidden"/>
+    /// collapses it to the auto-hide strip on its <see cref="Region"/> edge (<see cref="DockZone.Center"/>
+    /// uses the left edge); <see cref="DockPanelState.Closed"/> leaves it out until it is reopened.
+    /// Read once, like <see cref="Region"/>: after that the user owns the layout, and the state is
+    /// changed with <see cref="BbDock.SetPanelStateAsync(string, DockPanelState)"/>.
+    /// Defaults to <see cref="DockPanelState.Docked"/>.
+    /// </summary>
+    [Parameter]
+    public DockPanelState InitialState { get; set; } = DockPanelState.Docked;
+
+    /// <summary>
+    /// Whether the user can auto-hide the panel to an edge strip. Defaults to <c>true</c>.
+    /// Ignored when <see cref="Locked"/> is <c>true</c>.
+    /// </summary>
+    [Parameter]
+    public bool CanAutoHide { get; set; } = true;
+
+    /// <summary>
+    /// The size in pixels the panel's flyout opens at while auto-hidden: its width on the left and
+    /// right edges, its height on the top and bottom edges. <c>null</c> (the default) uses 280px
+    /// for the sides and 200px for the top and bottom. The flyout can still be resized by the user.
+    /// </summary>
+    [Parameter]
+    public int? AutoHideSize { get; set; }
+
+    /// <summary>
     /// The minimum width of the panel in pixels. Enforced while resizing a floating window and
     /// applied as a CSS constraint when docked. <c>null</c> (the default) means no minimum.
     /// </summary>
@@ -108,6 +134,9 @@ public partial class BbDockPanel : ComponentBase, IDisposable
 
     /// <summary>Whether the user may drag this panel to move, reorder or re-dock it. <c>false</c> when locked.</summary>
     internal bool CanMove => !Locked;
+
+    /// <summary>Whether the user may auto-hide this panel to an edge strip. <c>false</c> when locked.</summary>
+    internal bool CanUserAutoHide => CanAutoHide && !Locked;
 
     private bool registered;
 

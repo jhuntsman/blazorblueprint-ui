@@ -1,10 +1,12 @@
 // Docking interactions for BbDock.
 //
-// Handles three pointer-driven gestures:
+// Handles four pointer-driven gestures:
 //   1. Dragging a panel tab to re-dock it (as a tab or a split), to a dock edge, or out to a
 //      floating window. Draws a live drop indicator and reports the resolved drop to .NET.
 //   2. Dragging a floating window by its tab strip to reposition it.
 //   3. Dragging a floating window's resize grip to resize it.
+//   4. Dragging an auto-hide flyout's inner edge to resize it.
+// It also dismisses an open auto-hide flyout on an outside click or Escape.
 //
 // .NET owns the layout model; this module only computes drop targets and reports results.
 
@@ -28,6 +30,9 @@ export function disposeDock(dockId) {
         // Abort any in-flight drag so ghost/indicator elements and document-level
         // listeners are not orphaned when the component is disposed mid-gesture.
         dock.cancelSession();
+    }
+    if (dock && dock.detachFlyout) {
+        dock.detachFlyout();
     }
     docks.delete(dockId);
 }
@@ -570,4 +575,145 @@ export function startWindowResize(dockId, windowId, clientX, clientY, pointerId,
         }
     });
     document.body.style.cursor = "nwse-resize";
+}
+
+// ---------------------------------------------------------------- auto-hide flyout
+
+// Clicks inside these never dismiss the flyout: the flyout itself, the strip tabs (they toggle
+// the flyout on their own), floating windows, and portalled overlays such as a menu or popover
+// opened from content inside the flyout.
+const FLYOUT_SAFE = "[data-dock-autohide-tab], [data-dock-window], [data-portal-content], [data-bb-portal], .blazorblueprint-portal";
+
+// Attaches the dismiss listeners for the dock's open flyout, replacing any previous ones.
+// focus moves focus into the flyout, for a flyout the user (or OpenPanelAsync) just opened.
+export function openFlyout(dockId, panelId, focus) {
+    const dock = docks.get(dockId);
+    if (!dock) {
+        return;
+    }
+
+    if (dock.detachFlyout) {
+        dock.detachFlyout();
+    }
+
+    const flyoutEl = dock.rootEl.querySelector(`[data-dock-flyout="${dockId}"]`);
+    if (!flyoutEl) {
+        return;
+    }
+
+    const dismiss = (returnFocus) => {
+        detach();
+        if (returnFocus) {
+            const tab = dock.rootEl.querySelector(`[data-dock-autohide-tab="${CSS.escape(panelId)}"]`);
+            if (tab) {
+                tab.focus();
+            }
+        }
+        dock.dotNetRef.invokeMethodAsync("OnFlyoutDismissed", panelId).catch(() => { });
+    };
+
+    const onPointerDown = (e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+        if (flyoutEl.contains(target) || target.closest(FLYOUT_SAFE)) {
+            return;
+        }
+        dismiss(false);
+    };
+
+    const onKeyDown = (e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) {
+            return;
+        }
+        // Only when focus is in the flyout or on its strip tab: Escape elsewhere on the page
+        // belongs to whatever has focus there.
+        const active = document.activeElement;
+        const inFlyout = active && flyoutEl.contains(active);
+        const onTab = active && active.matches && active.matches(`[data-dock-autohide-tab="${CSS.escape(panelId)}"]`);
+        if (!inFlyout && !onTab) {
+            return;
+        }
+        e.preventDefault();
+        dismiss(true);
+    };
+
+    const detach = () => {
+        document.removeEventListener("pointerdown", onPointerDown, true);
+        document.removeEventListener("keydown", onKeyDown);
+        if (dock.detachFlyout === detach) {
+            dock.detachFlyout = null;
+        }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    dock.detachFlyout = detach;
+
+    if (focus) {
+        flyoutEl.focus({ preventScroll: true });
+    }
+}
+
+export function closeFlyout(dockId) {
+    const dock = docks.get(dockId);
+    if (dock && dock.detachFlyout) {
+        dock.detachFlyout();
+    }
+}
+
+// Resizes the open flyout from its inner edge. edge is the dock edge the flyout is attached to
+// ("left" and "right" are the inline start and end, so they mirror under RTL). The size is
+// clamped to [minSize, maxSize] (a maxSize of 0 means no maximum) and to the layout area, and
+// reported to .NET on release.
+export function startFlyoutResize(dockId, panelId, edge, clientX, clientY, pointerId, minSize, maxSize) {
+    const dock = docks.get(dockId);
+    if (!dock) {
+        return;
+    }
+
+    const flyoutEl = dock.rootEl.querySelector(`[data-dock-flyout="${dockId}"]`);
+    const layoutEl = dock.rootEl.querySelector(`[data-dock-layout="${dockId}"]`);
+    if (!flyoutEl || !layoutEl) {
+        return;
+    }
+
+    const horizontal = edge === "left" || edge === "right";
+    const rtl = isRtl(dock);
+    // +1 when moving the pointer right/down grows the flyout, -1 when it shrinks it.
+    let sign;
+    if (horizontal) {
+        const atVisualLeft = (edge === "left") !== rtl;
+        sign = atVisualLeft ? 1 : -1;
+    } else {
+        sign = edge === "top" ? 1 : -1;
+    }
+
+    const layoutRect = layoutEl.getBoundingClientRect();
+    // Leave a sliver of layout visible so the flyout can never swallow the whole area.
+    const areaMax = Math.max(minSize, (horizontal ? layoutRect.width : layoutRect.height) - 24);
+    const max = maxSize > 0 ? Math.min(maxSize, areaMax) : areaMax;
+    const min = Math.min(minSize, max);
+    const prop = horizontal ? "width" : "height";
+    const startSize = horizontal ? flyoutEl.offsetWidth : flyoutEl.offsetHeight;
+    const start = horizontal ? clientX : clientY;
+
+    attachSession(dock, pointerId, {
+        move: (e) => {
+            const delta = ((horizontal ? e.clientX : e.clientY) - start) * sign;
+            const size = Math.min(max, Math.max(min, startSize + delta));
+            flyoutEl.style[prop] = `${size}px`;
+        },
+        up: () => {
+            const size = horizontal ? flyoutEl.offsetWidth : flyoutEl.offsetHeight;
+            dock.dotNetRef
+                .invokeMethodAsync("OnFlyoutResized", panelId, size)
+                .catch(() => { });
+        },
+        cancel: () => {
+            flyoutEl.style[prop] = `${startSize}px`;
+        }
+    });
+    document.body.style.cursor = horizontal ? "ew-resize" : "ns-resize";
 }

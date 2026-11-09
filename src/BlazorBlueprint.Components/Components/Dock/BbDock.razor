@@ -1,4 +1,5 @@
 @namespace BlazorBlueprint.Components
+@using BlazorBlueprint.Icons.Lucide.Components
 @inject IBbLocalizer Localizer
 
 @* Registration host: instantiating the BbDockPanel children causes them to register with
@@ -8,26 +9,54 @@
     @ChildContent
 
     <div @ref="rootRef" class="@CssClass" data-dock-root="@dockId" @attributes="AdditionalAttributes">
-        @if (MaximizedGroup is not null)
+        @if (HasStrip(DockZone.Top))
         {
-            <BbDockNode Node="MaximizedGroup" />
+            @RenderStrip(DockZone.Top)
         }
-        else if (layout is not null)
-        {
-            <BbDockNode Node="layout" />
-        }
-        else
-        {
-            <div class="bb:flex bb:h-full bb:w-full bb:items-center bb:justify-center bb:p-8 bb:text-center bb:text-sm bb:text-muted-foreground">
-                @if (EmptyContent is not null)
+
+        <div class="bb:flex bb:min-h-0 bb:flex-1">
+            @if (HasStrip(DockZone.Left))
+            {
+                @RenderStrip(DockZone.Left)
+            }
+
+            @* The layout area: the flyout is positioned against it, so it slides out over the
+               docked panels without covering the strips. *@
+            <div class="bb:relative bb:min-w-0 bb:flex-1" data-dock-layout="@dockId">
+                @if (MaximizedGroup is not null)
                 {
-                    @EmptyContent
+                    <BbDockNode Node="MaximizedGroup" />
+                }
+                else if (layout is not null)
+                {
+                    <BbDockNode Node="layout" />
                 }
                 else
                 {
-                    <span>@Localizer["Dock.NoPanelsOpen"]</span>
+                    <div class="bb:flex bb:h-full bb:w-full bb:items-center bb:justify-center bb:p-8 bb:text-center bb:text-sm bb:text-muted-foreground">
+                        @if (EmptyContent is not null)
+                        {
+                            @EmptyContent
+                        }
+                        else
+                        {
+                            <span>@Localizer["Dock.NoPanelsOpen"]</span>
+                        }
+                    </div>
                 }
+
+                @RenderFlyout()
             </div>
+
+            @if (HasStrip(DockZone.Right))
+            {
+                @RenderStrip(DockZone.Right)
+            }
+        </div>
+
+        @if (HasStrip(DockZone.Bottom))
+        {
+            @RenderStrip(DockZone.Bottom)
         }
 
         @foreach (var win in floatingWindows)
@@ -45,3 +74,111 @@
         }
     </div>
 </CascadingValue>
+
+@code {
+    // Rendered inline rather than as child components so the strips and flyout add no public
+    // component types (Razor always generates components as public).
+
+    private RenderFragment RenderStrip(DockZone edge) =>
+        @<div class="@StripClass(edge)"
+              role="toolbar"
+              aria-orientation="@(edge is DockZone.Left or DockZone.Right ? "vertical" : "horizontal")"
+              aria-label="@Localizer["Dock.AutoHiddenPanels"]"
+              data-dock-strip="@EdgeName(edge)">
+            @foreach (var cluster in StripClusters(edge))
+            {
+                <div class="@StripClusterClass(edge)" @key="cluster.Key">
+                    @foreach (var entry in cluster)
+                    {
+                        var panel = GetPanel(entry.PanelId);
+                        if (panel is null)
+                        {
+                            continue;
+                        }
+
+                        var isOpen = activeFlyoutPanelId == entry.PanelId;
+                        <button type="button"
+                                class="@StripTabClass(entry)"
+                                title="@panel.Title"
+                                aria-expanded="@(isOpen ? "true" : "false")"
+                                aria-controls="@FlyoutDomId"
+                                data-dock-autohide-tab="@entry.PanelId"
+                                @key="entry.PanelId"
+                                @onclick="() => ToggleFlyout(entry.PanelId)">
+                            @if (panel.Icon is not null)
+                            {
+                                <span class="bb:flex bb:h-3.5 bb:w-3.5 bb:shrink-0 bb:items-center bb:justify-center">@panel.Icon</span>
+                            }
+                            <span class="bb:truncate">@panel.Title</span>
+                        </button>
+                    }
+                </div>
+            }
+        </div>;
+
+    private RenderFragment RenderFlyout()
+    {
+        var active = ActiveFlyout;
+        var activePanel = active is null ? null : GetPanel(active.PanelId);
+        var activeId = active?.PanelId ?? string.Empty;
+
+        return @<div id="@FlyoutDomId"
+                     class="@FlyoutClass(active)"
+                     style="@FlyoutStyle(active)"
+                     role="region"
+                     aria-label="@activePanel?.Title"
+                     tabindex="-1"
+                     data-dock-flyout="@dockId">
+            @if (active is not null && activePanel is not null)
+            {
+                <div class="bb:flex bb:h-8 bb:shrink-0 bb:items-center bb:gap-1.5 bb:border-b bb:border-border/60 bb:bg-muted/50 bb:ps-2.5 bb:pe-1 bb:text-xs">
+                    @if (activePanel.Icon is not null)
+                    {
+                        <span class="bb:flex bb:h-3.5 bb:w-3.5 bb:shrink-0 bb:items-center bb:justify-center">@activePanel.Icon</span>
+                    }
+                    <span class="bb:min-w-0 bb:flex-1 bb:truncate bb:font-medium">@activePanel.Title</span>
+                    <button type="button"
+                            class="@FlyoutButtonClass"
+                            aria-label="@Localizer["Dock.DockPanel", activePanel.Title]"
+                            title="@Localizer["Dock.DockPanel", activePanel.Title]"
+                            data-dock-flyout-dock="@active.PanelId"
+                            @onclick="() => DockAutoHiddenGroupAsync(activeId)">
+                        <LucideIcon Name="@DockIcon(active.Edge)" Size="14" />
+                    </button>
+                    @if (activePanel.CanClose)
+                    {
+                        <button type="button"
+                                class="@FlyoutButtonClass"
+                                aria-label="@Localizer["Dock.CloseTab", activePanel.Title]"
+                                title="@Localizer["Dock.CloseTab", activePanel.Title]"
+                                @onclick="() => ClosePanelAsync(activeId)">
+                            <LucideIcon Name="x" Size="14" />
+                        </button>
+                    }
+                </div>
+
+                <div class="@FlyoutGripClass(active.Edge)"
+                     data-dock-flyout-resize="@active.PanelId"
+                     @onpointerdown="StartFlyoutResizeAsync">
+                </div>
+            }
+
+            @* Every auto-hidden panel's content stays rendered (hidden unless its flyout is open),
+               as inactive tabs do, so component state survives opening and closing the flyout. *@
+            <div class="@(active is null ? "bb:hidden" : "bb:relative bb:min-h-0 bb:flex-1 bb:overflow-auto")">
+                @foreach (var entry in autoHidden)
+                {
+                    var panel = GetPanel(entry.PanelId);
+                    if (panel is null)
+                    {
+                        continue;
+                    }
+
+                    <div class="@(entry.PanelId == active?.PanelId ? "bb:h-full" : "bb:hidden")" @key="entry.PanelId">
+                        @panel.ChildContent
+                    </div>
+                }
+            </div>
+        </div>;
+    }
+}
